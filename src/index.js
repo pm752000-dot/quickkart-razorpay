@@ -1,7 +1,7 @@
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
 }
@@ -34,6 +34,105 @@ export default {
       });
     }
 
+    /*
+     * GET /qrPayments?qrId=qr_xxxxxxxxx
+     *
+     * Fetch payments made against a Razorpay UPI QR.
+     */
+    if (url.pathname === "/qrPayments") {
+      if (request.method !== "GET") {
+        return jsonResponse(
+          {
+            success: false,
+            message: "Only GET requests are allowed",
+          },
+          405
+        );
+      }
+
+      try {
+        const qrId = url.searchParams.get("qrId");
+
+        if (!qrId) {
+          return jsonResponse(
+            {
+              success: false,
+              message: "qrId is required",
+            },
+            400
+          );
+        }
+
+        if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+          return jsonResponse(
+            {
+              success: false,
+              message: "Razorpay secrets are not configured",
+            },
+            500
+          );
+        }
+
+        const auth = btoa(
+          env.RAZORPAY_KEY_ID +
+            ":" +
+            env.RAZORPAY_KEY_SECRET
+        );
+
+        const razorpayUrl =
+          "https://api.razorpay.com/v1/payments/qr_codes/" +
+          encodeURIComponent(qrId) +
+          "/payments";
+
+        const response = await fetch(razorpayUrl, {
+          method: "GET",
+          headers: {
+            Authorization: "Basic " + auth,
+          },
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          console.error(
+            "Razorpay QR payments API error",
+            data
+          );
+
+          return jsonResponse(
+            {
+              success: false,
+              message:
+                data?.error?.description ||
+                "Unable to fetch Razorpay QR payments",
+            },
+            response.status
+          );
+        }
+
+        return jsonResponse({
+          success: true,
+          qrId,
+          payments: data,
+        });
+      } catch (error) {
+        console.error(
+          "QR payments Worker error",
+          error
+        );
+
+        return jsonResponse(
+          {
+            success: false,
+            message:
+              error?.message ||
+              "Unable to fetch Razorpay QR payments",
+          },
+          500
+        );
+      }
+    }
+
     if (url.pathname !== "/createRazorpayQr") {
       return jsonResponse(
         {
@@ -58,8 +157,10 @@ export default {
       const body = await request.json();
 
       const amount = Number(body?.amount);
+
       const orderReference =
-        body?.orderReference || `QK-${Date.now()}`;
+        body?.orderReference ||
+        `QK-${Date.now()}`;
 
       if (!Number.isFinite(amount) || amount <= 0) {
         return jsonResponse(
@@ -71,11 +172,15 @@ export default {
         );
       }
 
-      if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+      if (
+        !env.RAZORPAY_KEY_ID ||
+        !env.RAZORPAY_KEY_SECRET
+      ) {
         return jsonResponse(
           {
             success: false,
-            message: "Razorpay secrets are not configured",
+            message:
+              "Razorpay secrets are not configured",
           },
           500
         );
@@ -117,7 +222,10 @@ export default {
       const data = await response.json();
 
       if (!response.ok) {
-        console.error("Razorpay QR API error", data);
+        console.error(
+          "Razorpay QR API error",
+          data
+        );
 
         return jsonResponse(
           {
@@ -140,7 +248,10 @@ export default {
         },
       });
     } catch (error) {
-      console.error("Worker error", error);
+      console.error(
+        "Worker error",
+        error
+      );
 
       return jsonResponse(
         {
@@ -154,4 +265,5 @@ export default {
     }
   },
 };
+
 // Cloudflare GitHub deployment trigger
